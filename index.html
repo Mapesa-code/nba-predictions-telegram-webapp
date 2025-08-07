@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>NBA Predictions Bot</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#5D5CDE',
+                        'tg-bg': 'var(--tg-color-bg)',
+                        'tg-text': 'var(--tg-color-text)',
+                        'tg-hint': 'var(--tg-color-hint)',
+                        'tg-link': 'var(--tg-color-link)',
+                        'tg-button': 'var(--tg-color-button)',
+                        'tg-button-text': 'var(--tg-color-button-text)'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --tg-color-bg: #ffffff;
+            --tg-color-text: #000000;
+            --tg-color-hint: #999999;
+            --tg-color-link: #2481cc;
+            --tg-color-button: #2481cc;
+            --tg-color-button-text: #ffffff;
+        }
+        
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--tg-color-bg);
+            color: var(--tg-color-text);
+            overflow-x: hidden;
+        }
+        
+        .tg-button {
+            background-color: var(--tg-color-button);
+            color: var(--tg-color-button-text);
+        }
+        
+        .prediction-card {
+            transition: all 0.3s ease;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+        
+        .prediction-card:active {
+            transform: scale(0.98);
+            background-color: rgba(0,0,0,0.05);
+        }
+        
+        .confidence-high { border-left: 4px solid #10b981; }
+        .confidence-medium { border-left: 4px solid #f59e0b; }
+        .confidence-low { border-left: 4px solid #ef4444; }
+        
+        .animate-pulse-custom {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+    </style>
+</head>
+<body>
+    <div id="app" class="min-h-screen">
+        <!-- Header -->
+        <div class="sticky top-0 z-10 bg-white/90 backdrop-blur-sm border-b border-gray-200 px-4 py-3">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-3">
+                    <div class="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+                        <span class="text-white text-sm font-bold">🏀</span>
+                    </div>
+                    <div>
+                        <h1 class="text-lg font-bold">NBA Predictions</h1>
+                        <p class="text-xs text-gray-500" id="userGreeting">Loading...</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <div class="bg-green-100 px-2 py-1 rounded-full">
+                        <span class="text-green-800 text-xs font-semibold">68.3% Accuracy</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="px-4 py-4">
+            <div class="grid grid-cols-3 gap-3">
+                <div class="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl p-3 text-white text-center">
+                    <div class="text-2xl font-bold" id="todayGames">8</div>
+                    <div class="text-xs opacity-90">Games Today</div>
+                </div>
+                <div class="bg-gradient-to-r from-green-500 to-green-600 rounded-xl p-3 text-white text-center">
+                    <div class="text-2xl font-bold" id="highConfidence">5</div>
+                    <div class="text-xs opacity-90">High Confidence</div>
+                </div>
+                <div class="bg-gradient-to-r from-purple-500 to-purple-600 rounded-xl p-3 text-white text-center">
+                    <div class="text-2xl font-bold" id="avgConfidence">71%</div>
+                    <div class="text-xs opacity-90">Avg Confidence</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter Tabs -->
+        <div class="px-4 mb-4">
+            <div class="flex space-x-2 overflow-x-auto pb-2">
+                <button class="filter-tab active px-4 py-2 rounded-full bg-blue-500 text-white text-sm whitespace-nowrap" data-filter="all">
+                    All Games
+                </button>
+                <button class="filter-tab px-4 py-2 rounded-full bg-gray-200 text-gray-700 text-sm whitespace-nowrap" data-filter="high">
+                    High Confidence
+                </button>
+                <button class="filter-tab px-4 py-2 rounded-full bg-gray-200 text-gray-700 text-sm whitespace-nowrap" data-filter="rivalry">
+                    Rivalries
+                </button>
+                <button class="filter-tab px-4 py-2 rounded-full bg-gray-200 text-gray-700 text-sm whitespace-nowrap" data-filter="cross">
+                    Cross-Conference
+                </button>
+            </div>
+        </div>
+
+        <!-- Games List -->
+        <div class="px-4 space-y-3 mb-20" id="gamesList">
+            <!-- Games will be populated by JavaScript -->
+        </div>
+
+        <!-- Floating Action Button -->
+        <div class="fixed bottom-4 right-4">
+            <button id="refreshBtn" class="w-14 h-14 tg-button rounded-full shadow-lg flex items-center justify-center">
+                <span class="text-xl">🔄</span>
+            </button>
+        </div>
+
+        <!-- Bottom Sheet for Game Details -->
+        <div id="gameDetailSheet" class="fixed inset-x-0 bottom-0 bg-white rounded-t-3xl shadow-xl transform translate-y-full transition-transform duration-300 z-50">
+            <div class="p-4">
+                <div class="w-12 h-1 bg-gray-300 rounded-full mx-auto mb-4"></div>
+                <div id="gameDetailContent">
+                    <!-- Game details will be populated here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div id="loadingOverlay" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden">
+            <div class="bg-white rounded-xl p-6 text-center">
+                <div class="animate-pulse-custom text-4xl mb-2">🏀</div>
+                <div class="text-lg font-semibold">Updating Predictions...</div>
+                <div class="text-sm text-gray-500 mt-1">Using ML Model</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Telegram Web App
+        let tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        // Apply Telegram theme
+        function applyTelegramTheme() {
+            if (tg.themeParams) {
+                document.documentElement.style.setProperty('--tg-color-bg', tg.themeParams.bg_color || '#ffffff');
+                document.documentElement.style.setProperty('--tg-color-text', tg.themeParams.text_color || '#000000');
+                document.documentElement.style.setProperty('--tg-color-hint', tg.themeParams.hint_color || '#999999');
+                document.documentElement.style.setProperty('--tg-color-link', tg.themeParams.link_color || '#2481cc');
+                document.documentElement.style.setProperty('--tg-color-button', tg.themeParams.button_color || '#2481cc');
+                document.documentElement.style.setProperty('--tg-color-button-text', tg.themeParams.button_text_color || '#ffffff');
+                
+                document.body.style.backgroundColor = tg.themeParams.bg_color || '#ffffff';
+            }
+        }
+
+        // Show user greeting
+        function showUserGreeting() {
+            const user = tg.initDataUnsafe?.user;
+            const greeting = document.getElementById('userGreeting');
+            
+            if (user) {
+                greeting.textContent = `Hello, ${user.first_name}! 👋`;
+            } else {
+                greeting.textContent = 'Welcome to NBA Predictions! 🏀';
+            }
+        }
+
+        // NBA Teams Data
+        const nbaTeams = {
+            'Eastern': {
+                'Atlantic': ['Boston Celtics', 'Brooklyn Nets', 'New York Knicks', 'Philadelphia 76ers', 'Toronto Raptors'],
+                'Central': ['Chicago Bulls', 'Cleveland Cavaliers', 'Detroit Pistons', 'Indiana Pacers', 'Milwaukee Bucks'],
+                'Southeast': ['Atlanta Hawks', 'Charlotte Hornets', 'Miami Heat', 'Orlando Magic', 'Washington Wizards']
+            },
+            'Western': {
+                'Northwest': ['Denver Nuggets', 'Minnesota Timberwolves', 'Oklahoma City Thunder', 'Portland Trail Blazers', 'Utah Jazz'],
+                'Pacific': ['Golden State Warriors', 'LA Clippers', 'Los Angeles Lakers', 'Phoenix Suns', 'Sacramento Kings'],
+                'Southwest': ['Dallas Mavericks', 'Houston Rockets', 'Memphis Grizzlies', 'New Orleans Pelicans', 'San Antonio Spurs']
+            }
+        };
+
+        const allTeams = Object.values(nbaTeams).flatMap(conference => 
+            Object.values(conference).flat()
+        );
+
+        // Generate Mock Games (Enhanced for Mobile)
+        function generateMockGames() {
+            const games = [];
+            const today = new Date();
+            
+            for (let i = 0; i < 8; i++) {
+                const awayTeam = allTeams[Math.floor(Math.random() * allTeams.length)];
+                let homeTeam;
+                do {
+                    homeTeam = allTeams[Math.floor(Math.random() * allTeams.length)];
+                } while (homeTeam === awayTeam);
+
+                const awayConf = getTeamConference(awayTeam);
+                const homeConf = getTeamConference(homeTeam);
+                const awayDiv = getTeamDivision(awayTeam);
+                const homeDiv = getTeamDivision(homeTeam);
+
+                const sameConference = awayConf === homeConf;
+                const sameDivision = awayDiv === homeDiv;
+                const spread = (Math.random() * 20 - 10).toFixed(1);
+                
+                const homeMoneyLine = spread < 0 ? 
+                    Math.floor(Math.random() * 200 + 100) : 
+                    -Math.floor(Math.random() * 300 + 110);
+                
+                const homeImpliedProb = homeMoneyLine > 0 ? 
+                    100 / (homeMoneyLine + 100) : 
+                    Math.abs(homeMoneyLine) / (Math.abs(homeMoneyLine) + 100);
+
+                let homePredictionProb = homeImpliedProb;
+                
+                if (sameDivision) homePredictionProb -= 0.02;
+                if (!sameConference) homePredictionProb += 0.01;
+                
+                const isWeekend = today.getDay() === 0 || today.getDay() === 6;
+                if (isWeekend) homePredictionProb += 0.015;
+                
+                homePredictionProb += (Math.random() - 0.5) * 0.1;
+                homePredictionProb = Math.max(0.15, Math.min(0.85, homePredictionProb));
+
+                const confidence = Math.abs(homePredictionProb - 0.5) * 2;
+                const predictedWinner = homePredictionProb > 0.5 ? homeTeam : awayTeam;
+
+                games.push({
+                    id: i + 1,
+                    awayTeam: getTeamShortName(awayTeam),
+                    homeTeam: getTeamShortName(homeTeam),
+                    awayTeamFull: awayTeam,
+                    homeTeamFull: homeTeam,
+                    spread: parseFloat(spread),
+                    homeMoneyLine,
+                    homePredictionProb,
+                    confidence,
+                    predictedWinner: getTeamShortName(predictedWinner),
+                    predictedWinnerFull: predictedWinner,
+                    sameConference,
+                    sameDivision,
+                    isWeekend,
+                    gameTime: new Date(today.getTime() + i * 2 * 60 * 60 * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+                    awayConference: awayConf,
+                    homeConference: homeConf,
+                    overUnder: (Math.random() * 40 + 200).toFixed(1)
+                });
+            }
+
+            return games;
+        }
+
+        function getTeamShortName(fullName) {
+            const shortNames = {
+                'Los Angeles Lakers': 'LAL',
+                'Golden State Warriors': 'GSW',
+                'Boston Celtics': 'BOS',
+                'Miami Heat': 'MIA',
+                'Brooklyn Nets': 'BKN',
+                'Philadelphia 76ers': 'PHI',
+                'Milwaukee Bucks': 'MIL',
+                'Phoenix Suns': 'PHX',
+                'Denver Nuggets': 'DEN',
+                'LA Clippers': 'LAC',
+                'Dallas Mavericks': 'DAL',
+                'Memphis Grizzlies': 'MEM',
+                'Chicago Bulls': 'CHI',
+                'New York Knicks': 'NYK',
+                'Toronto Raptors': 'TOR',
+                'Atlanta Hawks': 'ATL',
+                'Cleveland Cavaliers': 'CLE',
+                'Washington Wizards': 'WAS',
+                'Indiana Pacers': 'IND',
+                'Charlotte Hornets': 'CHA',
+                'San Antonio Spurs': 'SAS',
+                'Minnesota Timberwolves': 'MIN',
+                'Oklahoma City Thunder': 'OKC',
+                'Portland Trail Blazers': 'POR',
+                'Utah Jazz': 'UTA',
+                'Sacramento Kings': 'SAC',
+                'New Orleans Pelicans': 'NOP',
+                'Orlando Magic': 'ORL',
+                'Detroit Pistons': 'DET',
+                'Houston Rockets': 'HOU'
+            };
+            return shortNames[fullName] || fullName.split(' ').pop().substring(0, 3).toUpperCase();
+        }
+
+        function getTeamConference(team) {
+            for (const [conf, divisions] of Object.entries(nbaTeams)) {
+                for (const teams of Object.values(divisions)) {
+                    if (teams.includes(team)) return conf;
+                }
+            }
+            return 'Unknown';
+        }
+
+        function getTeamDivision(team) {
+            for (const [conf, divisions] of Object.entries(nbaTeams)) {
+                for (const [div, teams] of Object.entries(divisions)) {
+                    if (teams.includes(team)) return div;
+                }
+            }
+            return 'Unknown';
+        }
+
+        let currentGames = generateMockGames();
+        let filteredGames = [...currentGames];
+        let currentFilter = 'all';
+
+        function renderGames() {
+            const gamesList = document.getElementById('gamesList');
+            gamesList.innerHTML = '';
+
+            filteredGames.forEach(game => {
+                const confidenceLevel = game.confidence > 0.7 ? 'high' : game.confidence > 0.55 ? 'medium' : 'low';
+                const confidenceClass = `confidence-${confidenceLevel}`;
+                
+                const gameCard = document.createElement('div');
+                gameCard.className = `prediction-card bg-white rounded-xl p-4 shadow-sm ${confidenceClass} cursor-pointer`;
+                gameCard.onclick = () => showGameDetails(game);
+                
+                gameCard.innerHTML = `
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="text-sm text-gray-500">${game.gameTime}</div>
+                        <div class="flex items-center space-x-2">
+                            <div class="text-xs px-2 py-1 rounded-full ${game.sameDivision ? 'bg-red-100 text-red-600' : game.sameConference ? 'bg-yellow-100 text-yellow-600' : 'bg-blue-100 text-blue-600'}">
+                                ${game.sameDivision ? 'Division' : game.sameConference ? 'Conference' : 'Cross-Conf'}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center space-x-3">
+                            <div class="text-center">
+                                <div class="font-bold text-lg">${game.awayTeam}</div>
+                                <div class="text-xs text-gray-500">Away</div>
+                            </div>
+                            <div class="text-gray-400 font-bold">@</div>
+                            <div class="text-center">
+                                <div class="font-bold text-lg">${game.homeTeam}</div>
+                                <div class="text-xs text-gray-500">Home</div>
+                            </div>
+                        </div>
+                        
+                        <div class="text-right">
+                            <div class="text-lg font-bold ${game.predictedWinner === game.homeTeam ? 'text-green-600' : 'text-blue-600'}">
+                                ${game.predictedWinner}
+                            </div>
+                            <div class="text-xs text-gray-500">Predicted</div>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center justify-between">
+                        <div class="flex space-x-4 text-sm text-gray-600">
+                            <span>Spread: ${game.spread > 0 ? '+' : ''}${game.spread}</span>
+                            <span>O/U: ${game.overUnder}</span>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-xl font-bold ${confidenceLevel === 'high' ? 'text-green-600' : confidenceLevel === 'medium' ? 'text-yellow-600' : 'text-gray-600'}">
+                                ${(game.confidence * 100).toFixed(0)}%
+                            </div>
+                            <div class="text-xs text-gray-500">Confidence</div>
+                        </div>
+                    </div>
+                `;
+                
+                gamesList.appendChild(gameCard);
+            });
+
+            updateStats();
+        }
+
+        function showGameDetails(game) {
+            const sheet = document.getElementById('gameDetailSheet');
+            const content = document.getElementById('gameDetailContent');
+            
+            content.innerHTML = `
+                <div class="text-center mb-4">
+                    <h3 class="text-xl font-bold">${game.awayTeamFull} @ ${game.homeTeamFull}</h3>
+                    <p class="text-gray-500">${game.gameTime} • ${new Date().toDateString()}</p>
+                </div>
+                
+                <div class="bg-gray-50 rounded-xl p-4 mb-4">
+                    <h4 class="font-semibold mb-2">AI Prediction</h4>
+                    <div class="flex items-center justify-between">
+                        <span>Predicted Winner:</span>
+                        <span class="font-bold ${game.predictedWinner === game.homeTeam ? 'text-green-600' : 'text-blue-600'}">${game.predictedWinnerFull}</span>
+                    </div>
+                    <div class="flex items-center justify-between mt-2">
+                        <span>Confidence Level:</span>
+                        <span class="font-bold">${(game.confidence * 100).toFixed(1)}%</span>
+                    </div>
+                    <div class="flex items-center justify-between mt-2">
+                        <span>Home Team Probability:</span>
+                        <span class="font-bold">${(game.homePredictionProb * 100).toFixed(1)}%</span>
+                    </div>
+                </div>
+                
+                <div class="bg-gray-50 rounded-xl p-4 mb-4">
+                    <h4 class="font-semibold mb-2">Betting Information</h4>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <div class="text-sm text-gray-500">Point Spread</div>
+                            <div class="font-bold">${game.spread > 0 ? '+' : ''}${game.spread}</div>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-500">Over/Under</div>
+                            <div class="font-bold">${game.overUnder}</div>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-500">Home ML</div>
+                            <div class="font-bold">${game.homeMoneyLine > 0 ? '+' : ''}${game.homeMoneyLine}</div>
+                        </div>
+                        <div>
+                            <div class="text-sm text-gray-500">Matchup</div>
+                            <div class="font-bold text-xs">${game.sameDivision ? 'Division Rival' : game.sameConference ? 'Same Conference' : 'Cross-Conference'}</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="text-center">
+                    <button onclick="closeGameDetails()" class="tg-button px-6 py-3 rounded-xl font-semibold">
+                        Close Details
+                    </button>
+                </div>
+            `;
+            
+            sheet.classList.remove('translate-y-full');
+            
+            // Add haptic feedback if available
+            if (tg.HapticFeedback) {
+                tg.HapticFeedback.impactOccurred('light');
+            }
+        }
+
+        function closeGameDetails() {
+            const sheet = document.getElementById('gameDetailSheet');
+            sheet.classList.add('translate-y-full');
+        }
+
+        function updateStats() {
+            document.getElementById('todayGames').textContent = filteredGames.length;
+            document.getElementById('highConfidence').textContent = filteredGames.filter(g => g.confidence > 0.7).length;
+            document.getElementById('avgConfidence').textContent = Math.round(filteredGames.reduce((sum, g) => sum + g.confidence, 0) / filteredGames.length * 100) + '%';
+        }
+
+        function applyFilter(filterType) {
+            currentFilter = filterType;
+            
+            // Update tab styles
+            document.querySelectorAll('.filter-tab').forEach(tab => {
+                tab.classList.remove('bg-blue-500', 'text-white');
+                tab.classList.add('bg-gray-200', 'text-gray-700');
+            });
+            
+            document.querySelector(`[data-filter="${filterType}"]`).classList.remove('bg-gray-200', 'text-gray-700');
+            document.querySelector(`[data-filter="${filterType}"]`).classList.add('bg-blue-500', 'text-white');
+
+            // Filter games
+            switch(filterType) {
+                case 'all':
+                    filteredGames = [...currentGames];
+                    break;
+                case 'high':
+                    filteredGames = currentGames.filter(g => g.confidence > 0.7);
+                    break;
+                case 'rivalry':
+                    filteredGames = currentGames.filter(g => g.sameDivision);
+                    break;
+                case 'cross':
+                    filteredGames = currentGames.filter(g => !g.sameConference);
+                    break;
+            }
+
+            renderGames();
+            
+            // Haptic feedback
+            if (tg.HapticFeedback) {
+                tg.HapticFeedback.selectionChanged();
+            }
+        }
+
+        function refreshPredictions() {
+            const overlay = document.getElementById('loadingOverlay');
+            overlay.classList.remove('hidden');
+            
+            // Haptic feedback
+            if (tg.HapticFeedback) {
+                tg.HapticFeedback.impactOccurred('medium');
+            }
+            
+            setTimeout(() => {
+                currentGames = generateMockGames();
+                applyFilter(currentFilter);
+                overlay.classList.add('hidden');
+                
+                // Show success feedback
+                if (tg.HapticFeedback) {
+                    tg.HapticFeedback.notificationOccurred('success');
+                }
+                
+                // Send data to bot if needed
+                tg.sendData(JSON.stringify({
+                    action: 'refresh_predictions',
+                    timestamp: new Date().toISOString(),
+                    games_count: currentGames.length
+                }));
+            }, 2000);
+        }
+
+        // Event Listeners
+        document.addEventListener('DOMContentLoaded', () => {
+            applyTelegramTheme();
+            showUserGreeting();
+            renderGames();
+            
+            // Filter tabs
+            document.querySelectorAll('.filter-tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    applyFilter(tab.dataset.filter);
+                });
+            });
+            
+            // Refresh button
+            document.getElementById('refreshBtn').addEventListener('click', refreshPredictions);
+            
+            // Close sheet on background click
+            document.getElementById('gameDetailSheet').addEventListener('click', (e) => {
+                if (e.target === e.currentTarget) {
+                    closeGameDetails();
+                }
+            });
+        });
+
+        // Handle back button
+        tg.onEvent('backButtonClicked', () => {
+            const sheet = document.getElementById('gameDetailSheet');
+            if (!sheet.classList.contains('translate-y-full')) {
+                closeGameDetails();
+            } else {
+                tg.close();
+            }
+        });
+
+        // Handle theme changes
+        tg.onEvent('themeChanged', applyTelegramTheme);
+    </script>
+</body>
+</html>
